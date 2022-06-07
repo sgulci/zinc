@@ -16,6 +16,9 @@
 package core
 
 import (
+	"fmt"
+
+	"github.com/blugelabs/bluge"
 	"github.com/blugelabs/bluge/analysis"
 	"github.com/rs/zerolog/log"
 
@@ -35,10 +38,15 @@ func LoadZincIndexesFromMetadata() error {
 		index := new(Index)
 		index.Name = indexes[i].Name
 		index.StorageType = indexes[i].StorageType
+		index.StorageSize = indexes[i].StorageSize
+		index.DocNum = indexes[i].DocNum
+		index.ShardNum = indexes[i].ShardNum
+		index.Shards = append(index.Shards, indexes[i].Shards...)
 		index.Settings = indexes[i].Settings
 		index.Mappings = indexes[i].Mappings
-		index.Mappings = indexes[i].Mappings
-		log.Info().Msgf("Loading index... [%s:%s]", index.Name, index.StorageType)
+		index.CreateAt = indexes[i].CreateAt
+		index.UpdateAt = indexes[i].UpdateAt
+		log.Info().Msgf("Loading index... [%s:%s] shards[%d]", index.Name, index.StorageType, index.ShardNum)
 
 		// load index analysis
 		if index.Settings != nil && index.Settings.Analysis != nil {
@@ -47,20 +55,54 @@ func LoadZincIndexesFromMetadata() error {
 				return errors.New(errors.ErrorTypeRuntimeException, "parse stored analysis error").Cause(err)
 			}
 		}
-
-		// load index data
-		var defaultSearchAnalyzer *analysis.Analyzer
-		if index.Analyzers != nil {
-			defaultSearchAnalyzer = index.Analyzers["default"]
-		}
-		index.Writer, err = LoadIndexWriter(index.Name, index.StorageType, defaultSearchAnalyzer)
-		if err != nil {
-			return errors.New(errors.ErrorTypeRuntimeException, "load index writer error").Cause(err)
-		}
-
 		// load in memory
 		ZINC_INDEX_LIST.Add(index)
 	}
 
 	return nil
+}
+
+func (index *Index) GetWriter() (*bluge.Writer, error) {
+	index.lock.RLock()
+	w := index.Shards[index.ShardNum-1].Writer
+	index.lock.RUnlock()
+	if w != nil {
+		return w, nil
+	}
+
+	// open writer
+	if err := index.openWriter(index.ShardNum - 1); err != nil {
+		return nil, err
+	}
+
+	// update metadata
+	index.UpdateMetadata()
+
+	index.lock.RLock()
+	w = index.Shards[index.ShardNum-1].Writer
+	index.lock.RUnlock()
+
+	return w, nil
+}
+
+func (index *Index) GetReader() (*bluge.Reader, error) {
+	w, err := index.GetWriter()
+	if err != nil {
+		return nil, err
+	}
+	return w.Reader()
+}
+
+func (index *Index) openWriter(shard int) error {
+	var defaultSearchAnalyzer *analysis.Analyzer
+	if index.Analyzers != nil {
+		defaultSearchAnalyzer = index.Analyzers["default"]
+	}
+
+	indexName := fmt.Sprintf("%s/%06x", index.Name, shard)
+	var err error
+	index.lock.Lock()
+	index.Shards[shard].Writer, err = OpenIndexWriter(indexName, index.StorageType, defaultSearchAnalyzer, 0, 0)
+	index.lock.Unlock()
+	return err
 }

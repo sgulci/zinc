@@ -45,10 +45,15 @@ type config struct {
 	BatchSize                 int    `env:"ZINC_BATCH_SIZE,default=1024"`
 	MaxResults                int    `env:"ZINC_MAX_RESULTS,default=10000"`
 	AggregationTermsSize      int    `env:"ZINC_AGGREGATION_TERMS_SIZE,default=1000"`
+	Shard                     shard
 	Etcd                      etcd
 	S3                        s3
 	MinIO                     minIO
 	Plugin                    plugin
+}
+
+type shard struct {
+	MaxSize int `env:"ZINC_SHARD_MAX_SIZE,default=1073741824"` // 1g
 }
 
 type etcd struct {

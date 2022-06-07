@@ -144,8 +144,8 @@ func BulkWorker(target string, body io.Reader) (*BulkResponse, error) {
 				batch[indexName] = index.NewBatch()
 			}
 
-			index, _ := core.GetIndex(indexName)
-			bdoc, err := index.BuildBlugeDocumentFromJSON(docID, doc)
+			newIndex, _ := core.GetIndex(indexName)
+			bdoc, err := newIndex.BuildBlugeDocumentFromJSON(docID, doc)
 			if err != nil {
 				return bulkRes, err
 			}
@@ -163,7 +163,13 @@ func BulkWorker(target string, body io.Reader) (*BulkResponse, error) {
 			if documentsInBatch >= batchSize {
 				for _, indexName := range indexesInThisBatch {
 					// Persist the batch to the index
-					if err := index.Writer.Batch(batch[indexName]); err != nil {
+					newIndex, _ := core.GetIndex(indexName)
+					writer, err := newIndex.GetWriter()
+					if err != nil {
+						log.Error().Msgf("bulk: index updating batch err %s", err.Error())
+						return bulkRes, err
+					}
+					if err := writer.Batch(batch[indexName]); err != nil {
 						log.Error().Msgf("bulk: index updating batch err %s", err.Error())
 						return bulkRes, err
 					}
@@ -232,8 +238,13 @@ func BulkWorker(target string, body io.Reader) (*BulkResponse, error) {
 
 	for _, indexName := range indexesInThisBatch {
 		// Persist the batch to the index
-		index, _ := core.GetIndex(indexName)
-		if err := index.Writer.Batch(batch[indexName]); err != nil {
+		newIndex, _ := core.GetIndex(indexName)
+		writer, err := newIndex.GetWriter()
+		if err != nil {
+			log.Error().Msgf("bulk: index updating batch err %s", err.Error())
+			return bulkRes, err
+		}
+		if err := writer.Batch(batch[indexName]); err != nil {
 			log.Printf("bulk: index updating batch err %s", err.Error())
 			return bulkRes, err
 		}

@@ -36,7 +36,7 @@ func (index *Index) Search(query *meta.ZincQuery) (*meta.SearchResponse, error) 
 		return nil, err
 	}
 
-	reader, err := index.Writer.Reader()
+	reader, err := index.GetReader()
 	if err != nil {
 		log.Printf("index.SearchV2: error accessing reader: %s", err.Error())
 		return nil, err

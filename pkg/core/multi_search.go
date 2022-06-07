@@ -40,7 +40,7 @@ func MultiSearch(indexNames []string, query *meta.ZincQuery) (*meta.SearchRespon
 				continue
 			}
 			if indexName == "" || (indexName != "" && strings.HasPrefix(index.Name, indexName[:len(indexName)-1])) {
-				reader, err := index.Writer.Reader()
+				reader, err := index.GetReader()
 				if err != nil {
 					return nil, err
 				}

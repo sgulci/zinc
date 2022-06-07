@@ -13,24 +13,24 @@
 * limitations under the License.
  */
 
-package core
+package directory
 
-// UpdateDocument inserts or updates a document in the zinc index
-func (index *Index) UpdateDocument(docID string, doc map[string]interface{}, mintedID bool) error {
-	bdoc, err := index.BuildBlugeDocumentFromJSON(docID, doc)
-	if err != nil {
-		return err
-	}
+import (
+	"path"
 
-	// Finally update the document on disk
-	writer, err := index.GetWriter()
-	if err != nil {
-		return err
+	"github.com/blugelabs/bluge"
+	"github.com/blugelabs/bluge/index"
+)
+
+// GetDiskConfig returns a bluge config that will store index data in local disk
+// rootPath: the root path of data
+// indexName: the name of the index to use.
+func GetDiskConfig(rootPath string, indexName string, timeRange ...int64) bluge.Config {
+	config := index.DefaultConfig(path.Join(rootPath, indexName))
+	if len(timeRange) == 2 {
+		if timeRange[0] <= timeRange[1] {
+			config = config.WithTimeRange(timeRange[0], timeRange[1])
+		}
 	}
-	if !mintedID {
-		err = writer.Update(bdoc.ID(), bdoc)
-	} else {
-		err = writer.Insert(bdoc)
-	}
-	return err
+	return bluge.DefaultConfigWithIndexConfig(config)
 }

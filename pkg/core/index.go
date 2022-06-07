@@ -18,6 +18,7 @@ package core
 import (
 	"fmt"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/blugelabs/bluge"
@@ -25,6 +26,7 @@ import (
 	"github.com/goccy/go-json"
 
 	"github.com/zinclabs/zinc/pkg/meta"
+	"github.com/zinclabs/zinc/pkg/metadata"
 	zincanalysis "github.com/zinclabs/zinc/pkg/uquery/analysis"
 	"github.com/zinclabs/zinc/pkg/zutils"
 	"github.com/zinclabs/zinc/pkg/zutils/flatten"
@@ -33,7 +35,7 @@ import (
 type Index struct {
 	meta.Index
 	Analyzers map[string]*analysis.Analyzer `json:"-"`
-	Writer    *bluge.Writer                 `json:"-"`
+	lock      sync.RWMutex                  `json:"-"`
 }
 
 // BuildBlugeDocumentFromJSON returns the bluge document for the json document. It also updates the mapping for the fields if not found.
@@ -131,7 +133,7 @@ func (index *Index) BuildBlugeDocumentFromJSON(docID string, doc map[string]inte
 	bdoc.AddField(bluge.NewStoredOnlyField("_source", docByteVal))
 	bdoc.AddField(bluge.NewCompositeFieldExcluding("_all", []string{"_id", "_index", "_source", "@timestamp"}))
 
-	// test for add time index
+	// Add time for index
 	bdoc.SetTimestamp(timestamp.UnixNano())
 
 	return bdoc, nil
@@ -280,30 +282,56 @@ func (index *Index) SetMappings(mappings *meta.Mappings) error {
 	return nil
 }
 
-func (index *Index) UpdateMetadata() {
-	w := index.Writer
-	if w == nil {
-		return
-	}
-	_, index.StorageSize = w.DirectoryStats()
-
-	if r, err := w.Reader(); err == nil {
-		if n, err := r.Count(); err == nil {
-			index.DocNum = n
+func (index *Index) UpdateMetadata() error {
+	var totalDocNum, totalSize uint64
+	index.lock.RLock()
+	for _, shard := range index.Shards {
+		if shard.Writer == nil {
+			totalDocNum += shard.DocNum
+			totalSize += shard.StorageSize
+			continue
 		}
+		var docNum, storageSize uint64
+		_, storageSize = shard.Writer.DirectoryStats()
+		if r, err := shard.Writer.Reader(); err == nil {
+			if n, err := r.Count(); err == nil {
+				docNum = n
+			}
+		}
+		if docNum > 0 {
+			shard.DocNum = docNum
+		}
+		if storageSize > 0 {
+			shard.StorageSize = storageSize
+		}
+		totalDocNum += shard.DocNum
+		totalSize += shard.StorageSize
 	}
+	if totalDocNum > 0 && totalSize > 0 {
+		index.DocNum = totalDocNum
+		index.StorageSize = totalSize
+	}
+	index.lock.RUnlock()
+
+	return metadata.Index.Set(index.Name, index.Index)
 }
 
 func (index *Index) Close() error {
-	if index.Writer == nil {
-		return nil
-	}
+	var err error
 	// update metadata before close
-	index.UpdateMetadata()
-	// close writer
-	if err := index.Writer.Close(); err != nil {
+	if err = index.UpdateMetadata(); err != nil {
 		return err
 	}
-	index.Writer = nil
-	return nil
+	index.lock.Lock()
+	for _, shard := range index.Shards {
+		if shard.Writer == nil {
+			continue
+		}
+		if e := shard.Writer.Close(); e != nil {
+			err = e
+		}
+		shard.Writer = nil
+	}
+	index.lock.Unlock()
+	return err
 }

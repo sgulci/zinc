@@ -89,7 +89,7 @@ func Search(index *core.Index, iQuery *ZincQuery) (*SearchResponse, error) {
 		}, err
 	}
 
-	reader, err := index.Writer.Reader()
+	reader, err := index.GetReader()
 	if err != nil {
 		log.Printf("error accessing reader: %s", err.Error())
 	}
