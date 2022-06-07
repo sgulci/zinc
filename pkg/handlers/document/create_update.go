@@ -65,5 +65,8 @@ func CreateUpdate(c *gin.Context) {
 		return
 	}
 
+	// check shards
+	_ = index.CheckShards()
+
 	c.JSON(http.StatusOK, gin.H{"id": docID})
 }

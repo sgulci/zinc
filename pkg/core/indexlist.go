@@ -31,7 +31,7 @@ type IndexList struct {
 func init() {
 	ZINC_INDEX_LIST.Indexes = make(map[string]*Index)
 	if err := LoadZincIndexesFromMetadata(); err != nil {
-		log.Error().Err(err).Msgf("Error loading index")
+		log.Error().Err(err).Msg("Error loading index")
 	}
 }
 

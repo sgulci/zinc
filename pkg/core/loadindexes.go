@@ -22,7 +22,9 @@ import (
 	"github.com/blugelabs/bluge/analysis"
 	"github.com/rs/zerolog/log"
 
+	"github.com/zinclabs/zinc/pkg/config"
 	"github.com/zinclabs/zinc/pkg/errors"
+	"github.com/zinclabs/zinc/pkg/meta"
 	"github.com/zinclabs/zinc/pkg/metadata"
 	zincanalysis "github.com/zinclabs/zinc/pkg/uquery/analysis"
 )
@@ -86,6 +88,10 @@ func (index *Index) GetWriter() (*bluge.Writer, error) {
 }
 
 func (index *Index) GetReader() (*bluge.Reader, error) {
+	fmt.Println("GetReader")
+	for _, shard := range index.Shards {
+		fmt.Printf("shard:%d %+v\n", shard.ID, shard)
+	}
 	w, err := index.GetWriter()
 	if err != nil {
 		return nil, err
@@ -105,4 +111,26 @@ func (index *Index) openWriter(shard int) error {
 	index.Shards[shard].Writer, err = OpenIndexWriter(indexName, index.StorageType, defaultSearchAnalyzer, 0, 0)
 	index.lock.Unlock()
 	return err
+}
+
+// CheckShards if current shard reach the maximum shard size, create a new shard
+func (index *Index) CheckShards() error {
+	w, err := index.GetWriter()
+	if err != nil {
+		return err
+	}
+	_, size := w.DirectoryStats()
+	if size > config.Global.Shard.MaxSize {
+		return index.NewShard()
+	}
+	return nil
+}
+
+func (index *Index) NewShard() error {
+	log.Info().Str("index", index.Name).Int("shard", index.ShardNum).Msg("init new shard")
+	index.lock.Lock()
+	index.ShardNum++
+	index.Shards = append(index.Shards, &meta.IndexShard{ID: index.ShardNum - 1})
+	index.lock.Unlock()
+	return index.openWriter(index.ShardNum - 1)
 }

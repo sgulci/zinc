@@ -52,8 +52,17 @@ type config struct {
 	Plugin                    plugin
 }
 
+// 1073741824 1g
+// 536870912  512m
+// 268435456  256m
+// 134217728  128m
+// 67108864   64m
+// 33554432   32m
+// 16777216   16m
+
 type shard struct {
-	MaxSize int `env:"ZINC_SHARD_MAX_SIZE,default=1073741824"` // 1g
+	// MaxShards is the maximum number of shards to create.
+	MaxSize uint64 `env:"ZINC_SHARD_MAX_SIZE,default=1073741824"`
 }
 
 type etcd struct {
@@ -140,12 +149,18 @@ func setField(field reflect.Value, tag string) {
 		return
 	}
 	switch field.Kind() {
-	case reflect.Int:
-		vi, err := strconv.Atoi(v)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		vi, err := strconv.ParseInt(v, 10, 64)
 		if err != nil {
 			log.Fatal().Err(err).Msgf("env %s is not int", tag)
 		}
 		field.SetInt(int64(vi))
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		vi, err := strconv.ParseUint(v, 10, 64)
+		if err != nil {
+			log.Fatal().Err(err).Msgf("env %s is not uint", tag)
+		}
+		field.SetUint(uint64(vi))
 	case reflect.Bool:
 		vi, err := strconv.ParseBool(v)
 		if err != nil {
