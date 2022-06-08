@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/blugelabs/bluge"
@@ -135,6 +136,8 @@ func (index *Index) BuildBlugeDocumentFromJSON(docID string, doc map[string]inte
 
 	// Add time for index
 	bdoc.SetTimestamp(timestamp.UnixNano())
+	// Upate metadata
+	index.SetTimestamp(timestamp.UnixNano())
 
 	return bdoc, nil
 }
@@ -282,38 +285,64 @@ func (index *Index) SetMappings(mappings *meta.Mappings) error {
 	return nil
 }
 
+func (index *Index) SetTimestamp(t int64) {
+	if index.DocTimeMin == 0 {
+		atomic.StoreInt64(&index.DocTimeMin, t)
+	}
+	if index.DocTimeMax == 0 {
+		atomic.StoreInt64(&index.DocTimeMax, t)
+	}
+	if t < index.DocTimeMin {
+		atomic.StoreInt64(&index.DocTimeMin, t)
+	}
+	if t > index.DocTimeMax {
+		atomic.StoreInt64(&index.DocTimeMax, t)
+	}
+}
+
 func (index *Index) UpdateMetadata() error {
 	var totalDocNum, totalSize uint64
+	// update docNum and storageSize
+	for i := 0; i < index.ShardNum; i++ {
+		index.UpdateMetadataByShard(i)
+	}
 	index.lock.RLock()
-	for _, shard := range index.Shards {
-		if shard.Writer == nil {
-			totalDocNum += shard.DocNum
-			totalSize += shard.StorageSize
-			continue
-		}
-		var docNum, storageSize uint64
-		_, storageSize = shard.Writer.DirectoryStats()
-		if r, err := shard.Writer.Reader(); err == nil {
-			if n, err := r.Count(); err == nil {
-				docNum = n
-			}
-		}
-		if docNum > 0 {
-			shard.DocNum = docNum
-		}
-		if storageSize > 0 {
-			shard.StorageSize = storageSize
-		}
-		totalDocNum += shard.DocNum
-		totalSize += shard.StorageSize
+	for i := 0; i < index.ShardNum; i++ {
+		totalDocNum += index.Shards[i].DocNum
+		totalSize += index.Shards[i].StorageSize
 	}
 	if totalDocNum > 0 && totalSize > 0 {
 		index.DocNum = totalDocNum
 		index.StorageSize = totalSize
 	}
+	// update docTime
+	index.Shards[index.ShardNum-1].DocTimeMin = index.DocTimeMin
+	index.Shards[index.ShardNum-1].DocTimeMax = index.DocTimeMax
 	index.lock.RUnlock()
 
 	return metadata.Index.Set(index.Name, index.Index)
+}
+
+func (index *Index) UpdateMetadataByShard(n int) {
+	index.lock.RLock()
+	shard := index.Shards[n]
+	index.lock.RUnlock()
+	if shard.Writer == nil {
+		return
+	}
+	var docNum, storageSize uint64
+	_, storageSize = shard.Writer.DirectoryStats()
+	if r, err := shard.Writer.Reader(); err == nil {
+		if n, err := r.Count(); err == nil {
+			docNum = n
+		}
+	}
+	if docNum > 0 {
+		shard.DocNum = docNum
+	}
+	if storageSize > 0 {
+		shard.StorageSize = storageSize
+	}
 }
 
 func (index *Index) Close() error {

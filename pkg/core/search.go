@@ -28,6 +28,7 @@ import (
 	"github.com/zinclabs/zinc/pkg/uquery"
 	"github.com/zinclabs/zinc/pkg/uquery/fields"
 	"github.com/zinclabs/zinc/pkg/uquery/source"
+	"github.com/zinclabs/zinc/pkg/uquery/timerange"
 )
 
 func (index *Index) Search(query *meta.ZincQuery) (*meta.SearchResponse, error) {
@@ -36,12 +37,17 @@ func (index *Index) Search(query *meta.ZincQuery) (*meta.SearchResponse, error) 
 		return nil, err
 	}
 
-	reader, err := index.GetReader()
+	timeMin, timeMax := timerange.Query(query.Query)
+	readers, err := index.GetReaders(timeMin, timeMax)
 	if err != nil {
 		log.Printf("index.SearchV2: error accessing reader: %s", err.Error())
 		return nil, err
 	}
-	defer reader.Close()
+	defer func() {
+		for _, reader := range readers {
+			reader.Close()
+		}
+	}()
 
 	ctx := context.Background()
 	var cancel context.CancelFunc
@@ -50,7 +56,7 @@ func (index *Index) Search(query *meta.ZincQuery) (*meta.SearchResponse, error) 
 		defer cancel()
 	}
 
-	dmi, err := reader.Search(ctx, searchRequest)
+	dmi, err := bluge.MultiSearch(ctx, searchRequest, readers...)
 	if err != nil {
 		log.Printf("index.SearchV2: error executing search: %s", err.Error())
 		if err == context.DeadlineExceeded {

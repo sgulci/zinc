@@ -41,6 +41,8 @@ func LoadZincIndexesFromMetadata() error {
 		index.Name = indexes[i].Name
 		index.StorageType = indexes[i].StorageType
 		index.StorageSize = indexes[i].StorageSize
+		index.DocTimeMin = indexes[i].DocTimeMin
+		index.DocTimeMax = indexes[i].DocTimeMax
 		index.DocNum = indexes[i].DocNum
 		index.ShardNum = indexes[i].ShardNum
 		index.Shards = append(index.Shards, indexes[i].Shards...)
@@ -64,16 +66,25 @@ func LoadZincIndexesFromMetadata() error {
 	return nil
 }
 
-func (index *Index) GetWriter() (*bluge.Writer, error) {
+func (index *Index) GetWriter(shards ...int) (*bluge.Writer, error) {
+	var shard int
+	if len(shards) == 1 {
+		shard = shards[0]
+	} else {
+		shard = index.ShardNum - 1
+	}
+	if shard >= index.ShardNum || shard < 0 {
+		return nil, errors.New(errors.ErrorTypeRuntimeException, "shard not found")
+	}
 	index.lock.RLock()
-	w := index.Shards[index.ShardNum-1].Writer
+	w := index.Shards[shard].Writer
 	index.lock.RUnlock()
 	if w != nil {
 		return w, nil
 	}
 
 	// open writer
-	if err := index.openWriter(index.ShardNum - 1); err != nil {
+	if err := index.openWriter(shard); err != nil {
 		return nil, err
 	}
 
@@ -81,22 +92,32 @@ func (index *Index) GetWriter() (*bluge.Writer, error) {
 	index.UpdateMetadata()
 
 	index.lock.RLock()
-	w = index.Shards[index.ShardNum-1].Writer
+	w = index.Shards[shard].Writer
 	index.lock.RUnlock()
 
 	return w, nil
 }
 
-func (index *Index) GetReader() (*bluge.Reader, error) {
-	fmt.Println("GetReader")
-	for _, shard := range index.Shards {
-		fmt.Printf("shard:%d %+v\n", shard.ID, shard)
+func (index *Index) GetReaders(timeMin, timeMax int64) ([]*bluge.Reader, error) {
+	rs := make([]*bluge.Reader, 0, 1)
+	for i := index.ShardNum - 1; i >= 0; i-- {
+		if (timeMin > 0 && index.Shards[i].DocTimeMax < timeMin) || (timeMax > 0 && index.Shards[i].DocTimeMin > timeMax) {
+			continue
+		}
+		w, err := index.GetWriter(i)
+		if err != nil {
+			return nil, err
+		}
+		r, err := w.Reader()
+		if err != nil {
+			return nil, err
+		}
+		rs = append(rs, r)
+		if index.Shards[i].DocTimeMin < timeMin {
+			break
+		}
 	}
-	w, err := index.GetWriter()
-	if err != nil {
-		return nil, err
-	}
-	return w.Reader()
+	return rs, nil
 }
 
 func (index *Index) openWriter(shard int) error {
@@ -128,7 +149,14 @@ func (index *Index) CheckShards() error {
 
 func (index *Index) NewShard() error {
 	log.Info().Str("index", index.Name).Int("shard", index.ShardNum).Msg("init new shard")
+	// update current shard
+	index.UpdateMetadataByShard(index.ShardNum - 1)
 	index.lock.Lock()
+	index.Shards[index.ShardNum-1].DocTimeMin = index.DocTimeMin
+	index.Shards[index.ShardNum-1].DocTimeMax = index.DocTimeMax
+	index.DocTimeMin = 0
+	index.DocTimeMax = 0
+	// create new shard
 	index.ShardNum++
 	index.Shards = append(index.Shards, &meta.IndexShard{ID: index.ShardNum - 1})
 	index.lock.Unlock()

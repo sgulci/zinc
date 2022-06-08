@@ -26,6 +26,8 @@ type Index struct {
 	StorageType string         `json:"storage_type"`
 	StorageSize uint64         `json:"storage_size"`
 	DocNum      uint64         `json:"doc_num"`
+	DocTimeMin  int64          `json:"doc_time_min"`
+	DocTimeMax  int64          `json:"doc_time_max"`
 	ShardNum    int            `json:"shard_num"`
 	Shards      []*IndexShard  `json:"shards"`
 	Settings    *IndexSettings `json:"settings,omitempty"`
