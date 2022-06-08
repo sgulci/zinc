@@ -34,12 +34,13 @@ func MultiSearch(indexNames []string, query *meta.ZincQuery) (*meta.SearchRespon
 	var mappings *meta.Mappings
 	var analyzers map[string]*analysis.Analyzer
 	var readers []*bluge.Reader
-	readerMap := make(map[string]struct{})
+	var shardNum int
+	indexMap := make(map[string]struct{})
 
 	timeMin, timeMax := timerange.Query(query.Query)
 	for _, index := range ZINC_INDEX_LIST.List() {
 		for _, indexName := range indexNames {
-			if _, ok := readerMap[index.Name]; ok {
+			if _, ok := indexMap[index.Name]; ok {
 				continue
 			}
 			if indexName == "" || (indexName != "" && strings.HasPrefix(index.Name, indexName[:len(indexName)-1])) {
@@ -48,11 +49,12 @@ func MultiSearch(indexNames []string, query *meta.ZincQuery) (*meta.SearchRespon
 					return nil, err
 				}
 				readers = append(readers, reader...)
+				shardNum += index.ShardNum
 				if mappings == nil {
 					mappings = index.Mappings
 					analyzers = index.Analyzers
 				}
-				readerMap[index.Name] = struct{}{}
+				indexMap[index.Name] = struct{}{}
 			}
 		}
 	}
@@ -91,5 +93,5 @@ func MultiSearch(indexNames []string, query *meta.ZincQuery) (*meta.SearchRespon
 		return nil, err
 	}
 
-	return searchV2(dmi, query, mappings)
+	return searchV2(shardNum, len(readers), dmi, query, mappings)
 }

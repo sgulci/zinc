@@ -69,10 +69,10 @@ func (index *Index) Search(query *meta.ZincQuery) (*meta.SearchResponse, error) 
 		return nil, err
 	}
 
-	return searchV2(dmi, query, index.Mappings)
+	return searchV2(index.ShardNum, len(readers), dmi, query, index.Mappings)
 }
 
-func searchV2(dmi search.DocumentMatchIterator, query *meta.ZincQuery, mappings *meta.Mappings) (*meta.SearchResponse, error) {
+func searchV2(shardNum, readerNum int, dmi search.DocumentMatchIterator, query *meta.ZincQuery, mappings *meta.Mappings) (*meta.SearchResponse, error) {
 	resp := &meta.SearchResponse{
 		Hits: meta.Hits{Hits: []meta.Hit{}},
 	}
@@ -154,11 +154,9 @@ func searchV2(dmi search.DocumentMatchIterator, query *meta.ZincQuery, mappings 
 	}
 
 	resp.Took = int(dmi.Aggregations().Duration().Milliseconds())
-	resp.Shards = meta.Shards{Total: 1, Successful: 1}
+	resp.Shards = meta.Shards{Total: shardNum, Successful: readerNum, Skipped: shardNum - readerNum}
 	resp.Hits = meta.Hits{
-		Total: meta.Total{
-			Value: int(dmi.Aggregations().Count()),
-		},
+		Total:    meta.Total{Value: int(dmi.Aggregations().Count())},
 		MaxScore: dmi.Aggregations().Metric("max_score"),
 		Hits:     Hits,
 	}
