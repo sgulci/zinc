@@ -66,6 +66,7 @@ func LoadZincIndexesFromMetadata() error {
 	return nil
 }
 
+// GetWriter return the newest shard writer or special shard writer
 func (index *Index) GetWriter(shards ...int) (*bluge.Writer, error) {
 	var shard int
 	if len(shards) == 1 {
@@ -98,6 +99,20 @@ func (index *Index) GetWriter(shards ...int) (*bluge.Writer, error) {
 	return w, nil
 }
 
+// GetWriters return all shard writers
+func (index *Index) GetWriters() ([]*bluge.Writer, error) {
+	ws := make([]*bluge.Writer, 0, index.ShardNum)
+	for i := index.ShardNum - 1; i >= 0; i-- {
+		w, err := index.GetWriter(i)
+		if err != nil {
+			return nil, err
+		}
+		ws = append(ws, w)
+	}
+	return ws, nil
+}
+
+// GetReaders return all shard readers
 func (index *Index) GetReaders(timeMin, timeMax int64) ([]*bluge.Reader, error) {
 	rs := make([]*bluge.Reader, 0, 1)
 	for i := index.ShardNum - 1; i >= 0; i-- {
@@ -160,5 +175,7 @@ func (index *Index) NewShard() error {
 	index.ShardNum++
 	index.Shards = append(index.Shards, &meta.IndexShard{ID: index.ShardNum - 1})
 	index.lock.Unlock()
+	// store update
+	metadata.Index.Set(index.Name, index.Index)
 	return index.openWriter(index.ShardNum - 1)
 }

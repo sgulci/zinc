@@ -35,15 +35,17 @@ func Delete(c *gin.Context) {
 	}
 
 	bdoc := bluge.NewDocument(docID)
-	writer, err := index.GetWriter()
+	writers, err := index.GetWriters()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	err = writer.Delete(bdoc.ID())
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+	for _, w := range writers {
+		err = w.Delete(bdoc.ID())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "deleted", "index": indexName, "id": docID})
 }

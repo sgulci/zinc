@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"github.com/rs/zerolog/log"
 
@@ -103,6 +104,11 @@ func init() {
 	_ = godotenv.Load()
 	rv := reflect.ValueOf(Global).Elem()
 	loadConfig(rv)
+
+	// configure gin
+	if Global.GinMode == "release" {
+		gin.SetMode(gin.ReleaseMode)
+	}
 
 	// configure ice compress algorithm
 	switch strings.ToUpper(Global.IceCompressor) {
